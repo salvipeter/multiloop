@@ -15,7 +15,6 @@ dependencies/*
 *.orig
 *.o
 *.so
-Makefile
 Debug/*
 Release/*
 *.suo
