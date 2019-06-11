@@ -1,0 +1,24 @@
+syntax: glob
+
+multiloop
+output.eps
+harmonic.*
+triangle.*
+geometry.*
+
+debug/*
+release/*
+dependencies/*
+*~
+.\#*
+*\#
+*.orig
+*.o
+*.so
+Makefile
+Debug/*
+Release/*
+*.suo
+*.filters
+*.db
+*.opendb
