@@ -1,3 +1,4 @@
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -23,7 +24,7 @@ File format:
 - n # number of loops, then for each loop i:
   - n_i # number of curves in loop i, then for each curve j:
     - n_j # number of control points in curve j, then for each point k:
-      - xk yk # assumed to be in [-100,-100]x[100x100]
+      - uk vk x1k y1k z1k x2k y2k z2k # (u,v) assumed to be in [-100,-100]x[100x100]
 - resolution
 - m # number of lines
 - <what to show> # e.g. 3 0 s 1 l 2 h (s-lines of side 0, lambdas of corner 1, h-lines of side 2)
@@ -34,6 +35,8 @@ using namespace Geometry;
 using Segment = Point2DVector;
 using Curve = Point2DVector;
 using Loop = std::vector<Curve>;
+using ControlRow = PointVector;
+using ControlLoop = std::vector<ControlRow>;
 
 struct Setup {
   double resolution;
@@ -42,6 +45,7 @@ struct Setup {
   using Line = std::pair<size_t, LineType>;
   std::vector<Line> lines;
   std::vector<Loop> loops;
+  std::vector<ControlLoop> outer, inner;
 };
 
 void bernstein(size_t n, double u, DoubleVector &coeff) {
@@ -76,20 +80,30 @@ Setup readSetup(const std::string &filename) {
   f >> n;
   for (size_t i = 0; i < n; ++i) {
     Loop loop;
+    ControlLoop outer, inner;
     size_t ni;
     f >> ni;
     for (size_t j = 0; j < ni; ++j) {
       Curve curve;
+      ControlRow outer_row, inner_row;
       size_t nj;
       f >> nj;
       for (size_t k = 0; k < nj; ++k) {
-        double xk, yk;
-        f >> xk >> yk;
-        curve.emplace_back(xk, yk);
+        double uk, vk, xk, yk, zk;
+        f >> uk >> vk;
+        curve.emplace_back(uk, vk);
+        f >> xk >> yk >> zk;
+        outer_row.emplace_back(xk, yk, zk);
+        f >> xk >> yk >> zk;
+        inner_row.emplace_back(xk, yk, zk);
       }
       loop.push_back(curve);
+      outer.push_back(outer_row);
+      inner.push_back(inner_row);
     }
     result.loops.push_back(loop);
+    result.outer.push_back(outer);
+    result.inner.push_back(inner);
   }
   f >> result.resolution >> result.number_of_lines;
   f >> n;
@@ -235,6 +249,19 @@ size_t previousLine(const Setup &setup, size_t i) {
   return -1; // should not come here
 }
 
+size_t nextLine(const Setup &setup, size_t i) {
+  size_t n = 0;
+  for (const auto &l : setup.loops) {
+    if (i - n < l.size()) {
+      if (i == n + l.size() - 1)
+        return n;
+      return i + 1;
+    }
+    n += l.size();
+  }
+  return -1; // should not come here
+}
+
 std::vector<Segment> generateSegments(const Setup &setup,
                                       const std::vector<HarmonicMap *> &maps,
                                       const TriMesh &mesh) {
@@ -324,11 +351,85 @@ void writeSegments(const Setup &setup, const std::vector<Segment> &segments,
   f << "showpage" << std::endl;
 }
 
+double
+weight(const Setup &setup, size_t d, const DoubleVector &h, size_t i, size_t col) {
+  if (2 * col < d) {
+    double alpha = 0.5;
+    size_t im = previousLine(setup, i);
+    double di2 = std::pow(h[i], 2);
+    double dim2 = std::pow(h[im], 2);
+    double denom = dim2 + di2;
+    if (denom > EPSILON)
+      alpha = dim2 / denom;
+    return alpha;
+  }
+  if (2 * col > d) {
+    double beta = 0.5;
+    size_t ip = nextLine(setup, i);
+    double di2 = std::pow(h[i], 2);
+    double dip2 = std::pow(h[ip], 2);
+    double denom = dip2 + di2;
+    if (denom > EPSILON)
+      beta = dip2 / denom;
+    return beta;
+  }
+  return 1.0;
+}
+
+void evaluatePatch(const Setup &setup, const std::vector<HarmonicMap *> &maps, TriMesh &mesh) {
+  for (size_t i = 0, ie = mesh.points().size(); i < ie; ++i) {
+    double uv[] = { mesh[i][0], mesh[i][1] };
+    DoubleVector bc, s, h;
+    for (auto map : maps) {
+      double value;
+      harmonic_eval(map, uv, &value);
+      bc.push_back(value);
+    }
+    size_t n = bc.size();
+    for (size_t i = 0; i < n; ++i) {
+      size_t im = previousLine(setup, i);
+      double denom = bc[im] + bc[i];
+      s.push_back(denom < EPSILON ? 0.0 : bc[i] / denom);
+      h.push_back(1 - denom);
+    }
+
+    Point3D p(0, 0, 0);
+    double weight_sum = 0.0;
+    DoubleVector bl_s, bl_h;
+    size_t index = 0;
+    for (size_t i = 0; i < setup.loops.size(); ++i) {
+      for (size_t j = 0; j < setup.loops[i].size(); ++j, ++index) {
+        size_t d = setup.loops[i][j].size() - 1;
+        bernstein(d, s[index], bl_s);
+        bernstein(3, h[index], bl_h);
+        for (size_t row = 0; row <= 1; ++row) {
+          for (size_t col = 0; col <= d; ++col) {
+            double blend = bl_s[col] * bl_h[row] * weight(setup, d, h, index, col);
+            p += (row ? setup.inner[i][j][col] : setup.outer[i][j][col]) * blend;
+            weight_sum += blend;
+          }
+        }
+      }
+    }
+    mesh[i] = p / weight_sum;
+  }
+}
+
 int main(int argc, char **argv) {
+  bool generate_patch = true;
+
   if (argc != 2) {
-    std::cerr << "Usage: " << argv[0] << " <input.mlp>" << std::endl;
+    if (argc == 3) {
+      if (std::string(argv[2]) == "no-patch") {
+        generate_patch = false;
+        goto start;
+      }
+    }
+    std::cerr << "Usage: " << argv[0] << " <input.mlp> [no-patch]" << std::endl;
     return 1;
   }
+
+ start:
 
   auto setup = readSetup(argv[1]);
   auto maps = initializeMaps(setup);
@@ -336,6 +437,11 @@ int main(int argc, char **argv) {
 
   auto segments = generateSegments(setup, maps, mesh);
   writeSegments(setup, segments, "output.eps");
+
+  if (generate_patch) {
+    evaluatePatch(setup, maps, mesh);
+    mesh.writeOBJ("output.obj");
+  }
 
   for (auto m : maps)
     harmonic_free(m);
