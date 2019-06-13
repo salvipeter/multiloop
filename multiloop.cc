@@ -16,7 +16,7 @@ extern "C" {
 }
 
 const double EPSILON = 1.0e-5;
-const size_t LEVELS = 9;
+const size_t LEVELS = 10;
 const size_t RESOLUTION = 50;
 
 /*
@@ -25,6 +25,7 @@ File format:
   - n_i # number of curves in loop i, then for each curve j:
     - n_j # number of control points in curve j, then for each point k:
       - uk vk x1k y1k z1k x2k y2k z2k # (u,v) assumed to be in [-100,-100]x[100x100]
+  - u v # (except for the 1st loop) a domain point inside the hole
 - resolution
 - m # number of lines
 - <what to show> # e.g. 3 0 s 1 l 2 h (s-lines of side 0, lambdas of corner 1, h-lines of side 2)
@@ -46,6 +47,7 @@ struct Setup {
   std::vector<Line> lines;
   std::vector<Loop> loops;
   std::vector<ControlLoop> outer, inner;
+  DoubleVector holes;
 };
 
 void bernstein(size_t n, double u, DoubleVector &coeff) {
@@ -100,6 +102,12 @@ Setup readSetup(const std::string &filename) {
       loop.push_back(curve);
       outer.push_back(outer_row);
       inner.push_back(inner_row);
+    }
+    if (i != 0) {
+      double u, v;
+      f >> u >> v;
+      result.holes.push_back(u);
+      result.holes.push_back(v);
     }
     result.loops.push_back(loop);
     result.outer.push_back(outer);
@@ -180,7 +188,7 @@ TriMesh initializeMesh(const Setup &setup) {
   std::vector<int> segments;
 
   for (const auto &loop : setup.loops) {
-    size_t base = points.size();
+    size_t base = points.size() / 2;
     auto polyline = discretizeCurves(loop);
     size_t n = polyline.size();
     for (const auto &p : polyline) {
@@ -203,7 +211,8 @@ TriMesh initializeMesh(const Setup &setup) {
   in.segmentlist = &segments[0];
   in.numberofsegments = segments.size() / 2;
   in.segmentmarkerlist = nullptr;
-  in.numberofholes = 0;
+  in.numberofholes = setup.loops.size() - 1;
+  in.holelist = const_cast<double *>(&setup.holes[0]);
   in.numberofregions = 0;
 
   // Setup output data structure
@@ -217,7 +226,7 @@ TriMesh initializeMesh(const Setup &setup) {
 
   // Call the library function [with maximum triangle area = resolution]
   std::ostringstream cmd;
-  cmd << "pqa" << std::fixed << setup.resolution << "DBPzQ";
+  cmd << "pqa" << std::fixed << setup.resolution << "DBPzQY";
   triangulate(const_cast<char *>(cmd.str().c_str()), &in, &out, (struct triangulateio *)nullptr);
 
   // Process the result
