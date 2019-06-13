@@ -226,7 +226,7 @@ TriMesh initializeMesh(const Setup &setup) {
 
   // Call the library function [with maximum triangle area = resolution]
   std::ostringstream cmd;
-  cmd << "pqa" << std::fixed << setup.resolution << "DBPzQY";
+  cmd << "pqa" << std::fixed << setup.resolution << "DBPzQ";
   triangulate(const_cast<char *>(cmd.str().c_str()), &in, &out, (struct triangulateio *)nullptr);
 
   // Process the result
