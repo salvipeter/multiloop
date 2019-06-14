@@ -84,6 +84,19 @@ void createDomain(Setup &setup) {
         else
           points.push_back(setup.outer[i][j][k]);
   auto pv = LSQPlane::projectToBestFitPlane(points);
+
+  // Rescale the domain to be in [-100,-100]x[100x100]
+  Point2D min = pv[0], max = pv[0];
+  for (const auto &p : pv) {
+    if (p[0] < min[0]) min[0] = p[0];
+    if (p[0] > max[0]) max[0] = p[0];
+    if (p[1] < min[1]) min[1] = p[1];
+    if (p[1] > max[1]) max[1] = p[1];
+  }
+  double length = std::max(max[0] - min[0], max[1] - min[1]);
+  for (auto &p : pv)
+    p = Point2D(-90, -90) + (p - min) * 180 / length;
+
   size_t index = 0;
   for (size_t i = 0; i < setup.loops.size(); ++i) {
     Point2D center(0, 0);
