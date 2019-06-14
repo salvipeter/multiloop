@@ -16,8 +16,6 @@ extern "C" {
 }
 
 const double EPSILON = 1.0e-5;
-const size_t LEVELS = 10;
-const size_t RESOLUTION = 50;
 
 /*
 File format:
@@ -26,7 +24,7 @@ File format:
     - n_j # number of control points in curve j, then for each point k:
       - uk vk x1k y1k z1k x2k y2k z2k # (u,v) assumed to be in [-100,-100]x[100x100]
   - u v # (except for the 1st loop) a domain point inside the hole
-- resolution
+- curve_resolution mesh_resolution harmonic_levels
 - m # number of lines
 - <what to show> # e.g. 3 0 s 1 l 2 h (s-lines of side 0, lambdas of corner 1, h-lines of side 2)
  */
@@ -40,8 +38,8 @@ using ControlRow = PointVector;
 using ControlLoop = std::vector<ControlRow>;
 
 struct Setup {
-  double resolution;
-  size_t number_of_lines;
+  double mesh_resolution;
+  size_t curve_resolution, harmonic_levels, number_of_lines;
   enum class LineType { LAMBDA, S, H };
   using Line = std::pair<size_t, LineType>;
   std::vector<Line> lines;
@@ -113,7 +111,8 @@ Setup readSetup(const std::string &filename) {
     result.outer.push_back(outer);
     result.inner.push_back(inner);
   }
-  f >> result.resolution >> result.number_of_lines;
+  f >> result.curve_resolution >> result.mesh_resolution >> result.harmonic_levels;
+  f >> result.number_of_lines;
   f >> n;
   for (size_t i = 0; i < n; ++i) {
     size_t j;
@@ -137,7 +136,7 @@ std::vector<HarmonicMap *> initializeMaps(const Setup &setup) {
   std::vector<HarmonicMap *> result;
   for (const auto &l : setup.loops) {
     for (size_t i = 0; i < l.size(); ++i) {
-      auto map = harmonic_create(min, max, LEVELS);
+      auto map = harmonic_create(min, max, setup.harmonic_levels);
       for (const auto &loop : setup.loops) {
         for (size_t j = 0; j < loop.size(); ++j) {
           const auto &curve = loop[j];
@@ -166,15 +165,15 @@ std::vector<HarmonicMap *> initializeMaps(const Setup &setup) {
   return result;
 }
 
-Point2DVector discretizeCurves(const Loop &loop) {
+Point2DVector discretizeCurves(const Loop &loop, size_t resolution) {
   Point2DVector result;
 
   for (const auto &curve : loop) {
     if (curve.size() == 2)
       result.push_back(curve[0]);
     else {
-      for (size_t i = 0; i < RESOLUTION; ++i) {
-        double u = (double)i / RESOLUTION;
+      for (size_t i = 0; i < resolution; ++i) {
+        double u = (double)i / resolution;
         result.push_back(bezierEval(curve, u));
       }
     }
@@ -189,7 +188,7 @@ TriMesh initializeMesh(const Setup &setup) {
 
   for (const auto &loop : setup.loops) {
     size_t base = points.size() / 2;
-    auto polyline = discretizeCurves(loop);
+    auto polyline = discretizeCurves(loop, setup.curve_resolution);
     size_t n = polyline.size();
     for (const auto &p : polyline) {
       points.push_back(p[0]);
@@ -226,7 +225,7 @@ TriMesh initializeMesh(const Setup &setup) {
 
   // Call the library function [with maximum triangle area = resolution]
   std::ostringstream cmd;
-  cmd << "pqa" << std::fixed << setup.resolution << "DBPzQ";
+  cmd << "pqa" << std::fixed << setup.mesh_resolution << "DBPzQ";
   triangulate(const_cast<char *>(cmd.str().c_str()), &in, &out, (struct triangulateio *)nullptr);
 
   // Process the result
@@ -343,7 +342,7 @@ void writeSegments(const Setup &setup, const std::vector<Segment> &segments,
   f << "%!PS-Adobe-2.0\n%%BoundingBox: 0 0 200 200\n%%EndComments\n";
   f << "1 setlinewidth" << std::endl;
   for (const auto &loop : setup.loops) {
-    auto polyline = discretizeCurves(loop);
+    auto polyline = discretizeCurves(loop, setup.curve_resolution);
     f << "newpath" << std::endl;
     auto p = scale(polyline.front());
     f << p[0] << ' ' << p[1] << " moveto" << std::endl;
@@ -427,6 +426,7 @@ void evaluatePatch(const Setup &setup, const std::vector<HarmonicMap *> &maps, T
 }
 
 int main(int argc, char **argv) {
+  bool generate_domain = true;
   bool generate_patch = true;
 
   if (argc != 2) {
@@ -435,8 +435,12 @@ int main(int argc, char **argv) {
         generate_patch = false;
         goto start;
       }
+      if (std::string(argv[2]) == "no-domain") {
+	generate_domain = false;
+	goto start;
+      }
     }
-    std::cerr << "Usage: " << argv[0] << " <input.mlp> [no-patch]" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " <input.mlp> [no-domain|patch]" << std::endl;
     return 1;
   }
 
@@ -446,8 +450,10 @@ int main(int argc, char **argv) {
   auto maps = initializeMaps(setup);
   auto mesh = initializeMesh(setup);
 
-  auto segments = generateSegments(setup, maps, mesh);
-  writeSegments(setup, segments, "output.eps");
+  if (generate_domain) {
+    auto segments = generateSegments(setup, maps, mesh);
+    writeSegments(setup, segments, "output.eps");
+  }
 
   if (generate_patch) {
     evaluatePatch(setup, maps, mesh);
