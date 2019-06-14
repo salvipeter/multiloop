@@ -242,6 +242,8 @@ TriMesh initializeMesh(const Setup &setup) {
                      out.trianglelist[3*i+1],
                      out.trianglelist[3*i+2]);
 
+  trifree(out.pointlist);
+  trifree(out.trianglelist);
   return mesh;
 }
 
