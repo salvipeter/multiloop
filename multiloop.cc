@@ -7,6 +7,7 @@
 
 #include <geometry.hh>
 #include <harmonic.h>
+#include <lsq-plane.hh>
 
 #define ANSI_DECLARATORS
 #define REAL double
@@ -73,6 +74,23 @@ Point2D bezierEval(const Point2DVector &cp, double u) {
   return p;
 }
 
+void createDomain(Setup &setup) {
+  PointVector points;
+  for (size_t i = 0; i < setup.loops.size(); ++i)
+    for (size_t j = 0; j < setup.loops[i].size(); ++j)
+      for (size_t k = 0; k < setup.loops[i][j].size(); ++k)
+        if (setup.loops[i][j][k][0] != 0 || setup.loops[i][j][k][1] != 0)
+          return;
+        else
+          points.push_back(setup.outer[i][j][k]);
+  auto pv = LSQPlane::projectToBestFitPlane(points);
+  size_t index = 0;
+  for (size_t i = 0; i < setup.loops.size(); ++i)
+    for (size_t j = 0; j < setup.loops[i].size(); ++j)
+      for (size_t k = 0; k < setup.loops[i][j].size(); ++k)
+        setup.loops[i][j][k] = pv[index++];
+}
+
 Setup readSetup(const std::string &filename) {
   Setup result;
   std::ifstream f(filename);
@@ -111,6 +129,7 @@ Setup readSetup(const std::string &filename) {
     result.outer.push_back(outer);
     result.inner.push_back(inner);
   }
+  createDomain(result);
   f >> result.curve_resolution >> result.mesh_resolution >> result.harmonic_levels;
   f >> result.number_of_lines;
   f >> n;
