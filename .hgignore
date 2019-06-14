@@ -9,6 +9,8 @@ geometry.*
 debug/*
 release/*
 dependencies/*
+.vs/*
+*.user
 *~
 .\#*
 *\#
