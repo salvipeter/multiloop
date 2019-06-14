@@ -482,24 +482,25 @@ int main(int argc, char **argv) {
 	goto start;
       }
     }
-    std::cerr << "Usage: " << argv[0] << " <input.mlp> [no-domain|patch]" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " <input-prefix> [no-domain|patch]" << std::endl;
     return 1;
   }
 
  start:
 
-  auto setup = readSetup(argv[1]);
+  std::string basename(argv[1]);
+  auto setup = readSetup(basename + ".mlp");
   auto maps = initializeMaps(setup);
   auto mesh = initializeMesh(setup);
 
   if (generate_domain) {
     auto segments = generateSegments(setup, maps, mesh);
-    writeSegments(setup, segments, "output.eps");
+    writeSegments(setup, segments, basename + ".eps");
   }
 
   if (generate_patch) {
     evaluatePatch(setup, maps, mesh);
-    mesh.writeOBJ("output.obj");
+    mesh.writeOBJ(basename + ".obj");
   }
 
   for (auto m : maps)

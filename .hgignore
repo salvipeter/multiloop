@@ -1,10 +1,11 @@
 syntax: glob
 
 multiloop
-output.*
 harmonic.*
 triangle.*
 geometry.*
+*.eps
+*.obj
 
 debug/*
 release/*
