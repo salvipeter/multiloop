@@ -85,10 +85,20 @@ void createDomain(Setup &setup) {
           points.push_back(setup.outer[i][j][k]);
   auto pv = LSQPlane::projectToBestFitPlane(points);
   size_t index = 0;
-  for (size_t i = 0; i < setup.loops.size(); ++i)
+  for (size_t i = 0; i < setup.loops.size(); ++i) {
+    Point2D center(0, 0);
+    size_t count = 0;
     for (size_t j = 0; j < setup.loops[i].size(); ++j)
-      for (size_t k = 0; k < setup.loops[i][j].size(); ++k)
+      for (size_t k = 0; k < setup.loops[i][j].size(); ++k) {
+        center += pv[index]; ++count;
         setup.loops[i][j][k] = pv[index++];
+      }
+    if (i != 0) {
+      center = center / count;
+      setup.holes[(i-1)*2] = center[0];
+      setup.holes[(i-1)*2+1] = center[1];
+    }
+  }
 }
 
 Setup readSetup(const std::string &filename) {
