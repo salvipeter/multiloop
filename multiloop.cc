@@ -394,6 +394,13 @@ void writeSegments(const Setup &setup, const std::vector<Segment> &segments,
     }
     f << "closepath stroke" << std::endl;
   }
+  if (segments.empty())         // show control points when there are no parameter lines
+    for (const auto &loop : setup.loops)
+      for (const auto &curve : loop)
+        for (const auto &cp : curve) {
+          auto p = scale(cp);
+          f << p[0] << ' ' << p[1] << " 3 0 360 arc fill" << std::endl;
+        }
   f << "0.5 setlinewidth" << std::endl;
   for (const auto &s : segments) {
     auto p1 = scale(s[0]), p2 = scale(s[1]);
