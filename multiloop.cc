@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -117,6 +118,7 @@ void createDomain(Setup &setup) {
 Setup readSetup(const std::string &filename) {
   Setup result;
   std::ifstream f(filename);
+  f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
   size_t n;
   f >> n;
   for (size_t i = 0; i < n; ++i) {
@@ -496,7 +498,13 @@ int main(int argc, char **argv) {
  start:
 
   std::string basename(argv[1]);
-  auto setup = readSetup(basename + ".mlp");
+  Setup setup;
+  try {
+    setup = readSetup(basename + ".mlp");
+  } catch (std::ios::failure &) {
+    std::cerr << "Unable to read file: " << basename << ".mlp" << std::endl;
+    return 1;
+  }
   auto maps = initializeMaps(setup);
   auto mesh = initializeMesh(setup);
 
